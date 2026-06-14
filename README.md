@@ -1,3 +1,11 @@
+# Build and install (so ly can find and start dwl)
+
+make clean all
+
+cp dwl /usr/bin/
+
+cp dwl.desktop /usr/share/wayland-sessions/
+
 # dwl - dwm for Wayland
 
 2025-08-16:  
