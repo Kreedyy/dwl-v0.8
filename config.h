@@ -17,6 +17,12 @@ static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f}; /* You ca
 static const float resize_factor           = 0.0003f; /*0.0002f Resize multiplier for mouse resizing, depends on mouse sensivity. */
 static const uint32_t resize_interval_ms   = 7; /*16 Resize interval depends on framerate and screen refresh rate. */
 
+
+/* This is for better-resize patch but not used anymore. 
+ * Rather a patch that dynamically changes resize_factor based on 
+ * monitor aspect ration and horizontal/vertical resize direction
+ * */
+
 /* window resizing */
 /* resize_corner:
  * 0: top-left
@@ -25,9 +31,9 @@ static const uint32_t resize_interval_ms   = 7; /*16 Resize interval depends on 
  * 3: bottom-right
  * 4: closest to the cursor
  */
-static const int resize_corner = 4;
-static const int warp_cursor = 0;	/* 1: warp to corner, 0: don’t warp */
-static const int lock_cursor = 0;	/* 1: lock cursor, 0: don't lock */
+/* static const int resize_corner = 4;
+* static const int warp_cursor = 0;	 1: warp to corner, 0: don’t warp 
+* static const int lock_cursor = 0;	 1: lock cursor, 0: don't lock */
 
 /* tagging - TAGCOUNT must be no greater than 31 */
 #define TAGCOUNT (9)
