@@ -438,6 +438,61 @@ setratio(unsigned int need_vertical, const Arg *arg)
 	 * arrange itself after rate-limiting. */
 }
 
+/* After the controlling split's ratio changed, keep every window that is *not*
+ * adjacent to the dragged edge at its current pixel size, so only the two
+ * windows that actually touch the edge resize. Without this, when the
+ * controlling split is an ancestor whose subtree on either side holds more than
+ * the one adjacent window (e.g. four windows in a row where the focused one is
+ * in the middle), changing that split's ratio scales the whole group and drags
+ * non-adjacent windows along.
+ *
+ * This walks one subtree (the region on one side of the dragged divider) toward
+ * the divider. divider_high tells which side of the subtree faces the divider:
+ * 1 = its right/bottom edge, 0 = its left/top edge. At each split on the same
+ * axis as the resize, the child *away* from the divider is pinned to its
+ * previous pixel extent and the divider-facing child absorbs the whole change.
+ * Splits on the perpendicular axis are recursed into on both sides: every
+ * window stacked in the column/row that meets the divider should resize
+ * together, so both children still face the divider with the full extent.
+ * new_extent is the subtree's pixel extent (width for a vertical resize, height
+ * otherwise) after the controlling split's new ratio. */
+static void
+compensate(LayoutNode *node, unsigned int need_vertical,
+           int divider_high, int new_extent)
+{
+	LayoutNode *adj, *far;
+	int far_extent;
+	float r;
+
+	while (node && !node->is_client_node) {
+		if (node->is_split_vertically == need_vertical) {
+			adj = divider_high ? node->right : node->left;
+			far = divider_high ? node->left  : node->right;
+			far_extent = need_vertical ? far->area.width : far->area.height;
+			/* Nothing sensible to pin if the far child has no size or would
+			 * leave no room for the adjacent window. */
+			if (far_extent <= 0 || far_extent >= new_extent)
+				return;
+			/* split_ratio is the left/top child's fraction of the extent. */
+			r = divider_high ? (float)far_extent / (float)new_extent
+			                 : (float)(new_extent - far_extent) / (float)new_extent;
+			if (r < 0.05f)
+				r = 0.05f;
+			if (r > 0.95f)
+				r = 0.95f;
+			node->split_ratio = r;
+			new_extent -= far_extent;
+			node = adj;
+		} else {
+			/* Perpendicular split: both children meet the divider with the full
+			 * extent, so compensate each independently. */
+			compensate(node->left,  need_vertical, divider_high, new_extent);
+			compensate(node->right, need_vertical, divider_high, new_extent);
+			return;
+		}
+	}
+}
+
 /* Mouse-drag resize for a single axis: interpret the cursor movement as pixels
  * and convert it to a split-ratio delta using the pixel extent of the split
  * region along the resize axis. This keeps the border tracking the cursor 1:1
@@ -451,9 +506,9 @@ void
 setratio_px(unsigned int need_vertical, float px_delta)
 {
 	Client *sel;
-	LayoutNode *client_node, *split_node;
+	LayoutNode *client_node, *split_node, *near, *far;
 	float new_ratio, delta_ratio;
-	int focused_on_left, extent;
+	int focused_on_left, f_left_of_split, extent, near_extent, far_extent;
 
 	if (!selmon || !selmon->lt[selmon->sellt]->arrange || px_delta == 0.0f)
 		return;
@@ -489,6 +544,21 @@ setratio_px(unsigned int need_vertical, float px_delta)
 	if (new_ratio > 0.95f)
 		new_ratio = 0.95f;
 	split_node->split_ratio = new_ratio;
+
+	/* Pin every non-adjacent window so only the two windows touching the
+	 * dragged edge resize. The controlling split's divider lies on that edge;
+	 * compensate both of its subtrees toward the divider. The near subtree
+	 * (holding the focused window) faces the divider on the side toward the
+	 * focused window; the far subtree faces it from the opposite side. */
+	f_left_of_split = find_client_node(split_node->left, sel) != NULL;
+	near = f_left_of_split ? split_node->left : split_node->right;
+	far  = f_left_of_split ? split_node->right : split_node->left;
+	near_extent = (int)(extent * (f_left_of_split ? new_ratio : 1.0f - new_ratio));
+	far_extent  = extent - near_extent;
+	if (near_extent > 0)
+		compensate(near, need_vertical, f_left_of_split, near_extent);
+	if (far_extent > 0)
+		compensate(far, need_vertical, !f_left_of_split, far_extent);
 }
 
 void
