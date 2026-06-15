@@ -342,6 +342,7 @@ static void setsel(struct wl_listener *listener, void *data);
 static void setup(void);
 static void setratio_h(const Arg *arg);
 static void setratio_v(const Arg *arg);
+static void setratio_px(unsigned int need_vertical, float px_delta);
 static void swapclients(const Arg *arg);
 static void spawn(const Arg *arg);
 static void startdrag(struct wl_listener *listener, void *data);
@@ -2037,14 +2038,11 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
 			dy_total = cursor->y - resize_last_update_y;
 
 			if (time - last_resize_time >= resize_interval_ms) {
-				Arg a = {0};
-				if (fabs(dx_total) > fabs(dy_total)) {
-					a.f = (float)(dx_total * resize_factor);
-					setratio_h(&a);
-				} else {
-					a.f = (float)(dy_total * resize_factor);
-					setratio_v(&a);
-				}
+				if (dx_total != 0.0)
+					setratio_px(1, (float)dx_total);
+				if (dy_total != 0.0)
+					setratio_px(0, (float)dy_total);
+				apply_layout(selmon, selmon->root, selmon->w, 1);
 
 				last_resize_time = time;
 				resize_last_update_x = cursor->x;
@@ -2109,9 +2107,14 @@ moveresize(const Arg *arg)
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, "fleur");
 			break;
 		case CurResize:
-			wlr_cursor_set_xcursor(cursor, cursor_mgr, "se-resize");
 			resize_last_update_x = cursor->x;
 			resize_last_update_y = cursor->y;
+			resize_drag_right = (cursor->x - grabc->geom.x) * 2 >= grabc->geom.width;
+			resize_drag_bottom = (cursor->y - grabc->geom.y) * 2 >= grabc->geom.height;
+			wlr_cursor_set_xcursor(cursor, cursor_mgr,
+				resize_drag_bottom
+					? (resize_drag_right ? "se-resize" : "sw-resize")
+					: (resize_drag_right ? "ne-resize" : "nw-resize"));
 			break;
 		}
 	} else {

@@ -19,6 +19,7 @@ typedef struct LayoutNode {
 	struct LayoutNode *left;
 	struct LayoutNode *right;
 	struct LayoutNode *split_node;
+	struct wlr_box area; /* pixel rect this node currently occupies */
 	Client *client;
 } LayoutNode;
 
@@ -45,6 +46,11 @@ static Client *xytoclient(double x, double y);
 
 static double resize_last_update_x, resize_last_update_y;
 static uint32_t last_resize_time = 0;
+/* Which edge the current mouse-resize gesture is dragging. Decided once when
+ * the resize starts (from the cursor's position within the grabbed window) so
+ * the dragged border keeps following the cursor instead of flipping to the
+ * opposite side when the cursor reverses direction. */
+static int resize_drag_right = 1, resize_drag_bottom = 1;
 
 void
 apply_layout(Monitor *m, LayoutNode *node,
@@ -57,6 +63,10 @@ apply_layout(Monitor *m, LayoutNode *node,
 
 	if (!node)
 		return;
+
+	/* Remember the pixel rect this node occupies so mouse resizing can
+	 * convert a cursor delta into a split-ratio delta. */
+	node->area = area;
 
 	/* If this node is a client node, check if it is visible. */
 	if (node->is_client_node) {
@@ -426,6 +436,59 @@ setratio(unsigned int need_vertical, const Arg *arg)
 	apply_layout(selmon, selmon->root, selmon->w, 1);
 	/* Skip the arrange when called from motionnotify; that path calls
 	 * arrange itself after rate-limiting. */
+}
+
+/* Mouse-drag resize for a single axis: interpret the cursor movement as pixels
+ * and convert it to a split-ratio delta using the pixel extent of the split
+ * region along the resize axis. This keeps the border tracking the cursor 1:1
+ * regardless of monitor resolution. resize_factor scales sensitivity. The
+ * caller is responsible for arranging once both axes have been applied.
+ *
+ * need_vertical selects the axis: 1 adjusts a vertical split (left|right
+ * border, driven by horizontal cursor motion), 0 adjusts a horizontal split
+ * (top/bottom border, driven by vertical cursor motion). */
+void
+setratio_px(unsigned int need_vertical, float px_delta)
+{
+	Client *sel;
+	LayoutNode *client_node, *split_node;
+	float new_ratio, delta_ratio;
+	int focused_on_left, extent;
+
+	if (!selmon || !selmon->lt[selmon->sellt]->arrange || px_delta == 0.0f)
+		return;
+
+	sel = focustop(selmon);
+	if (!sel)
+		return;
+
+	client_node = find_client_node(selmon->root, sel);
+	if (!client_node)
+		return;
+
+	/* The dragged edge is fixed for the whole gesture. Dragging the right
+	 * (or bottom) edge means the focused window is the left (or top) child of
+	 * the divider, so growing that split's ratio moves the border outward. */
+	focused_on_left = need_vertical ? resize_drag_right : resize_drag_bottom;
+
+	split_node = find_suitable_split(selmon, client_node, need_vertical, focused_on_left);
+	if (!split_node)
+		split_node = find_suitable_split(selmon, client_node, need_vertical, !focused_on_left);
+	if (!split_node)
+		return;
+
+	extent = need_vertical ? split_node->area.width : split_node->area.height;
+	if (extent <= 0)
+		return;
+
+	delta_ratio = (px_delta * resize_factor) / (float)extent;
+
+	new_ratio = split_node->split_ratio + delta_ratio;
+	if (new_ratio < 0.05f)
+		new_ratio = 0.05f;
+	if (new_ratio > 0.95f)
+		new_ratio = 0.95f;
+	split_node->split_ratio = new_ratio;
 }
 
 void
