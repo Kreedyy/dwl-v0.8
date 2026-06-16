@@ -473,9 +473,13 @@ compensate(LayoutNode *node, unsigned int need_vertical,
 			 * leave no room for the adjacent window. */
 			if (far_extent <= 0 || far_extent >= new_extent)
 				return;
-			/* split_ratio is the left/top child's fraction of the extent. */
-			r = divider_high ? (float)far_extent / (float)new_extent
-			                 : (float)(new_extent - far_extent) / (float)new_extent;
+			/* split_ratio is the left/top child's fraction of the extent. The
+			 * +0.5 makes apply_layout's truncation (mid = (int)(extent * ratio))
+			 * reproduce far_extent exactly instead of a pixel short; without it
+			 * the pinned far child drifts a pixel per drag step, accumulating
+			 * into a visible slide over a continuous mouse resize. */
+			r = divider_high ? ((float)far_extent + 0.5f) / (float)new_extent
+			                 : ((float)(new_extent - far_extent) + 0.5f) / (float)new_extent;
 			if (r < 0.05f)
 				r = 0.05f;
 			if (r > 0.95f)
@@ -508,7 +512,7 @@ setratio_px(unsigned int need_vertical, float px_delta)
 	Client *sel;
 	LayoutNode *client_node, *split_node, *near, *far;
 	float new_ratio, delta_ratio;
-	int focused_on_left, f_left_of_split, extent, near_extent, far_extent;
+	int focused_on_left, f_left_of_split, extent, near_extent, far_extent, mid;
 
 	if (!selmon || !selmon->lt[selmon->sellt]->arrange || px_delta == 0.0f)
 		return;
@@ -553,8 +557,15 @@ setratio_px(unsigned int need_vertical, float px_delta)
 	f_left_of_split = find_client_node(split_node->left, sel) != NULL;
 	near = f_left_of_split ? split_node->left : split_node->right;
 	far  = f_left_of_split ? split_node->right : split_node->left;
-	near_extent = (int)(extent * (f_left_of_split ? new_ratio : 1.0f - new_ratio));
-	far_extent  = extent - near_extent;
+	/* Derive both extents from the same truncated midpoint apply_layout will
+	 * use (mid = (int)(extent * new_ratio)) so near_extent + far_extent ==
+	 * extent and each matches the real layout. Computing them independently as
+	 * (int)(extent * (1 - new_ratio)) rounds the opposite way and leaves the
+	 * compensate target a pixel off, which accumulates into a drifting window
+	 * when the focused client is the right/bottom child (top/left-edge drag). */
+	mid         = (int)(extent * new_ratio);
+	near_extent = f_left_of_split ? mid : extent - mid;
+	far_extent  = f_left_of_split ? extent - mid : mid;
 	if (near_extent > 0)
 		compensate(near, need_vertical, f_left_of_split, near_extent);
 	if (far_extent > 0)
