@@ -20,6 +20,8 @@ typedef struct LayoutNode {
 	struct LayoutNode *right;
 	struct LayoutNode *split_node;
 	struct wlr_box area; /* pixel rect this node currently occupies */
+	unsigned int vis;    /* cached visible-client count of this subtree,
+	                      * refreshed once per apply_layout pass */
 	Client *client;
 } LayoutNode;
 
@@ -34,9 +36,9 @@ static void destroy_tree(Monitor *m);
 static LayoutNode *find_client_node(LayoutNode *node, Client *c);
 static LayoutNode *find_suitable_split(Monitor *m, LayoutNode *start,
                                        unsigned int need_vertical, int focused_on_left);
+static int has_visible(LayoutNode *node, Monitor *m);
 static void init_tree(Monitor *m);
 static void insert_client(Monitor *m, Client *focused_client, Client *new_client);
-static LayoutNode *remove_client_node(LayoutNode *node, Client *c);
 static void remove_client(Monitor *m, Client *c);
 static void setratio_h(const Arg *arg);
 static void setratio_v(const Arg *arg);
@@ -52,6 +54,14 @@ static uint32_t last_resize_time = 0;
  * opposite side when the cursor reverses direction. */
 static int resize_drag_right = 1, resize_drag_bottom = 1;
 
+/* Split ratios are kept within [0.05, 0.95] so neither child of a split ever
+ * collapses to nothing. */
+static inline float
+clamp_ratio(float r)
+{
+	return MAX(0.05f, MIN(0.95f, r));
+}
+
 void
 apply_layout(Monitor *m, LayoutNode *node,
              struct wlr_box area, unsigned int is_root)
@@ -63,6 +73,12 @@ apply_layout(Monitor *m, LayoutNode *node,
 
 	if (!node)
 		return;
+
+	/* Refresh every subtree's cached visible count once, at the top of the
+	 * pass, so the per-split lookups below are O(1) and the whole layout pass
+	 * is O(n) instead of O(n^2). */
+	if (is_root)
+		visible_count(node, m);
 
 	/* Remember the pixel rect this node occupies so mouse resizing can
 	 * convert a cursor delta into a split-ratio delta. */
@@ -81,29 +97,24 @@ apply_layout(Monitor *m, LayoutNode *node,
 		return;
 	}
 
-	/* For a split node, we see how many visible children are on each side: */
-	left_count  = visible_count(node->left, m);
-	right_count = visible_count(node->right, m);
+	/* For a split node, read how many visible children are on each side from
+	 * the cache populated above. */
+	left_count  = node->left  ? node->left->vis  : 0;
+	right_count = node->right ? node->right->vis : 0;
 
-	if (left_count == 0 && right_count == 0) {
+	if (left_count == 0 && right_count == 0)
 		return;
-	} else if (left_count > 0 && right_count == 0) {
+	if (right_count == 0) {
 		apply_layout(m, node->left, area, 0);
 		return;
-	} else if (left_count == 0 && right_count > 0) {
+	}
+	if (left_count == 0) {
 		apply_layout(m, node->right, area, 0);
 		return;
 	}
 
 	/* If we’re here, we have visible clients in both subtrees. */
-	ratio = node->split_ratio;
-	if (ratio < 0.05f)
-		ratio = 0.05f;
-	if (ratio > 0.95f)
-		ratio = 0.95f;
-
-	memset(&left_area, 0, sizeof(left_area));
-	memset(&right_area, 0, sizeof(right_area));
+	ratio = clamp_ratio(node->split_ratio);
 
 	if (node->is_split_vertically) {
 		mid = (unsigned int)(area.width * ratio);
@@ -139,7 +150,6 @@ btrtile(Monitor *m)
 {
 	Client *c, *focused = NULL;
 	int n = 0;
-	LayoutNode *found;
 	struct wlr_box full_area;
 
 	if (!m)
@@ -147,10 +157,8 @@ btrtile(Monitor *m)
 
 	/* Remove non tiled clients from tree. */
 	wl_list_for_each(c, &clients, link) {
-		if (c->mon == m && !c->isfloating && !c->isfullscreen) {
-		} else {
+		if (c->mon != m || c->isfloating || c->isfullscreen)
 			remove_client(m, c);
-		}
 	}
 
 	/* If no client is found under cursor, fallback to focustop(m) */
@@ -160,10 +168,11 @@ btrtile(Monitor *m)
 	/* Insert visible clients that are not part of the tree. */
 	wl_list_for_each(c, &clients, link) {
 		if (VISIBLEON(c, m) && !c->isfloating && !c->isfullscreen && c->mon == m) {
-			found = find_client_node(m->root, c);
-			if (!found) {
+			/* c->layout_node is non-NULL only while c is in a tree, and c is
+			 * only ever inserted into its own monitor's tree — so here it is
+			 * an O(1) "already in m's tree?" test. */
+			if (!c->layout_node)
 				insert_client(m, focused, c);
-			}
 			n++;
 		}
 	}
@@ -185,6 +194,8 @@ create_client_node(Client *c)
 	node->is_client_node = 1;
 	node->split_ratio = 0.5f;
 	node->client = c;
+	if (c)
+		c->layout_node = node;
 	return node;
 }
 
@@ -213,7 +224,10 @@ destroy_node(LayoutNode *node)
 {
 	if (!node)
 		return;
-	if (!node->is_client_node) {
+	if (node->is_client_node) {
+		if (node->client)
+			node->client->layout_node = NULL;
+	} else {
 		destroy_node(node->left);
 		destroy_node(node->right);
 	}
@@ -259,8 +273,8 @@ find_suitable_split(Monitor *m, LayoutNode *start_node,
 
 	while (n) {
 		if (!n->is_client_node && n->is_split_vertically == need_vertical
-				&& visible_count(n->left, m) > 0
-				&& visible_count(n->right, m) > 0) {
+				&& has_visible(n->left, m)
+				&& has_visible(n->right, m)) {
 			if ((focused_on_left && n->left == child) ||
 			    (!focused_on_left && n->right == child))
 				return n;
@@ -293,8 +307,7 @@ insert_client(Monitor *m, Client *focused_client, Client *new_client)
 
 	/* Find the focused_client node,
 	 * if not found split the root. */
-	focused_node = focused_client ?
-		find_client_node(*root, focused_client) : NULL;
+	focused_node = focused_client ? focused_client->layout_node : NULL;
 	if (!focused_node) {
 		old_root = *root;
 		new_client_node = create_client_node(new_client);
@@ -342,60 +355,49 @@ insert_client(Monitor *m, Client *focused_client, Client *new_client)
 	focused_node->split_ratio = 0.5f;
 }
 
-LayoutNode *
-remove_client_node(LayoutNode *node, Client *c)
-{
-	LayoutNode *tmp;
-	if (!node)
-		return NULL;
-	if (node->is_client_node) {
-		/* If this client_node is the client we're removing,
-		 * return NULL to remove it */
-		if (node->client == c) {
-			free(node);
-			return NULL;
-		}
-		return node;
-	}
-
-	node->left = remove_client_node(node->left, c);
-	node->right = remove_client_node(node->right, c);
-
-	/* If one of the client node is NULL after removal and the other is not,
-	 * we "lift" the other client node up to replace this split node. */
-	if (!node->left && node->right) {
-		tmp = node->right;
-
-		/* Save pointer to split node */
-		if (tmp)
-			tmp->split_node = node->split_node;
-
-		free(node);
-		return tmp;
-	}
-
-	if (!node->right && node->left) {
-		tmp = node->left;
-
-		/* Save pointer to split node */
-		if (tmp)
-			tmp->split_node = node->split_node;
-
-		free(node);
-		return tmp;
-	}
-
-	/* If both children exist or both are NULL (empty tree),
-	 * return node as is. */
-	return node;
-}
-
+/* Detach c's client node from m's tree in O(tree height) using the client's
+ * back-pointer, instead of re-walking the whole tree. Every split node always
+ * has both children, so removing a leaf means lifting its sibling into the
+ * split's place — exactly what the old recursive walk did, just targeted. */
 void
 remove_client(Monitor *m, Client *c)
 {
-	if (!m->root || !c)
+	LayoutNode *cn, *parent, *sibling, *gp, *top;
+
+	if (!m || !c || !(cn = c->layout_node))
 		return;
-	m->root = remove_client_node(m->root, c);
+
+	/* The back-pointer can reference a node in another monitor's tree while
+	 * monitors re-arrange around a move. Confirm cn is rooted in m before
+	 * mutating m's tree; if not, this is a no-op (as the old search was). */
+	for (top = cn; top->split_node; top = top->split_node)
+		;
+	if (top != m->root)
+		return;
+
+	c->layout_node = NULL;
+	parent = cn->split_node;
+
+	/* Sole client: the tree becomes empty. */
+	if (!parent) {
+		m->root = NULL;
+		free(cn);
+		return;
+	}
+
+	/* Lift cn's sibling into parent's slot, carrying over the parent pointer. */
+	sibling = (parent->left == cn) ? parent->right : parent->left;
+	gp = parent->split_node;
+	sibling->split_node = gp;
+	if (!gp)
+		m->root = sibling;
+	else if (gp->left == parent)
+		gp->left = sibling;
+	else
+		gp->right = sibling;
+
+	free(cn);
+	free(parent);
 }
 
 static void
@@ -413,7 +415,7 @@ setratio(unsigned int need_vertical, const Arg *arg)
 	if (!sel)
 		return;
 
-	client_node = find_client_node(selmon->root, sel);
+	client_node = sel->layout_node;
 	if (!client_node)
 		return;
 
@@ -427,11 +429,7 @@ setratio(unsigned int need_vertical, const Arg *arg)
 		return;
 
 	new_ratio = (arg->f != 0.0f) ? (split_node->split_ratio + arg->f) : 0.5f;
-	if (new_ratio < 0.05f)
-		new_ratio = 0.05f;
-	if (new_ratio > 0.95f)
-		new_ratio = 0.95f;
-	split_node->split_ratio = new_ratio;
+	split_node->split_ratio = clamp_ratio(new_ratio);
 
 	apply_layout(selmon, selmon->root, selmon->w, 1);
 	/* Skip the arrange when called from motionnotify; that path calls
@@ -480,11 +478,7 @@ compensate(LayoutNode *node, unsigned int need_vertical,
 			 * into a visible slide over a continuous mouse resize. */
 			r = divider_high ? ((float)far_extent + 0.5f) / (float)new_extent
 			                 : ((float)(new_extent - far_extent) + 0.5f) / (float)new_extent;
-			if (r < 0.05f)
-				r = 0.05f;
-			if (r > 0.95f)
-				r = 0.95f;
-			node->split_ratio = r;
+			node->split_ratio = clamp_ratio(r);
 			new_extent -= far_extent;
 			node = adj;
 		} else {
@@ -521,7 +515,7 @@ setratio_px(unsigned int need_vertical, float px_delta)
 	if (!sel)
 		return;
 
-	client_node = find_client_node(selmon->root, sel);
+	client_node = sel->layout_node;
 	if (!client_node)
 		return;
 
@@ -543,11 +537,7 @@ setratio_px(unsigned int need_vertical, float px_delta)
 	delta_ratio = (px_delta * resize_factor) / (float)extent;
 
 	new_ratio = split_node->split_ratio + delta_ratio;
-	if (new_ratio < 0.05f)
-		new_ratio = 0.05f;
-	if (new_ratio > 0.95f)
-		new_ratio = 0.95f;
-	split_node->split_ratio = new_ratio;
+	split_node->split_ratio = clamp_ratio(new_ratio);
 
 	/* Pin every non-adjacent window so only the two windows touching the
 	 * dragged edge resize. The controlling split's divider lies on that edge;
@@ -639,12 +629,15 @@ void swapclients(const Arg *arg) {
 
 	/* If target is found, swap the two clients’ positions in the layout tree */
 	if (target) {
-		sel_node = find_client_node(selmon->root, sel);
-		target_node = find_client_node(selmon->root, target);
+		sel_node = sel->layout_node;
+		target_node = target->layout_node;
 		if (sel_node && target_node) {
 			tmp = sel_node->client;
 			sel_node->client = target_node->client;
 			target_node->client = tmp;
+			/* Keep the back-pointers consistent with the swapped clients. */
+			sel_node->client->layout_node = sel_node;
+			target_node->client->layout_node = target_node;
 			arrange(selmon);
 		}
 	}
@@ -660,12 +653,31 @@ visible_count(LayoutNode *node, Monitor *m)
 	/* Check if this client is visible. */
 	if (node->is_client_node) {
 		c = node->client;
-		if (c && VISIBLEON(c, m) && !c->isfloating && !c->isfullscreen)
-			return 1;
-		return 0;
+		node->vis = (c && VISIBLEON(c, m) && !c->isfloating
+				&& !c->isfullscreen) ? 1 : 0;
+		return node->vis;
 	}
-	/* Else it’s a split node. */
-	return visible_count(node->left, m) + visible_count(node->right, m);
+	/* Else it’s a split node: cache the subtree total so apply_layout can read
+	 * each side in O(1) instead of re-walking the subtree at every split. */
+	node->vis = visible_count(node->left, m) + visible_count(node->right, m);
+	return node->vis;
+}
+
+/* Like visible_count but only answers "is anything in this subtree visible?",
+ * short-circuiting on the first hit. Used on the mouse-resize path where the
+ * exact count is irrelevant. */
+int
+has_visible(LayoutNode *node, Monitor *m)
+{
+	Client *c;
+
+	if (!node)
+		return 0;
+	if (node->is_client_node) {
+		c = node->client;
+		return c && VISIBLEON(c, m) && !c->isfloating && !c->isfullscreen;
+	}
+	return has_visible(node->left, m) || has_visible(node->right, m);
 }
 
 Client *
@@ -685,7 +697,7 @@ xytoclient(double x, double y) {
 	/* If no client was found at cursor position fallback to closest. */
 	wl_list_for_each_reverse(c, &clients, link) {
 		if (VISIBLEON(c, m) && !c->isfloating && !c->isfullscreen) {
-			dx = 0, dy = 0;
+			dx = dy = 0;
 
 			if (x < c->geom.x)
 				dx = c->geom.x - x;

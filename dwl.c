@@ -142,6 +142,7 @@ typedef struct {
 	int isfloating, isurgent, isfullscreen, was_tiled;
 	uint32_t resize; /* configure serial of a pending resize */
 	struct wlr_box old_geom;
+	LayoutNode *layout_node; /* btrtile: node holding this client, or NULL */
 } Client;
 
 typedef struct {
