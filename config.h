@@ -139,7 +139,7 @@ static const char *filemgrcmd[] = { TERMINAL, "yazi", NULL };
 static const char *discordcmd[] = { "flatpak", "run", "dev.vencord.Vesktop", NULL };
 static const char *browsercmd[] = { "librewolf", NULL };
 static const Arg ssregioncmd = SHCMD("slurp | grim -g - - | wl-copy");
-
+static const Arg ssfullscreencmd = SHCMD("grim -o 'DP-1' - | wl-copy");
 
 static const Key keys[] = {
 	/* Note that Shift changes certain key codes: 2 -> at, etc. */
@@ -151,6 +151,7 @@ static const Key keys[] = {
   { MODKEY,                    XKB_KEY_e,           spawn,            {.v = filemgrcmd} },
   { MODKEY,                    XKB_KEY_d,           spawn,            {.v = discordcmd} },
   { 0,                         XKB_KEY_Print,       spawn,            ssregioncmd },
+  { MODKEY,                    XKB_KEY_Print,       spawn,            ssfullscreencmd },
 
   { MODKEY,                    XKB_KEY_f,           togglefloating,   {0} },
   { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
