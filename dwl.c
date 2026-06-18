@@ -705,6 +705,13 @@ buttonpress(struct wl_listener *listener, void *data)
 					else
 						selmon->root = create_client_node(c);
 
+					/* The floating drag changed c->geom directly, leaving
+					 * old_geom holding the pre-move tile rect. Invalidate it so
+					 * apply_layout's geometry cache doesn't skip resizing c when
+					 * the recomputed slot matches that stale rect (e.g. dropped
+					 * back in roughly the same spot). */
+					c->old_geom = (struct wlr_box){0};
+
 					setfloating(c, 0);
 					apply_layout(selmon, selmon->root, selmon->w, 1);
 				}
