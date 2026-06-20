@@ -7,7 +7,7 @@
 static const int sloppyfocus               = 1;  /* focus follows mouse */
 static const int bypass_surface_visibility = 0;  /* 1 means idle inhibitors will disable idle tracking even if it's surface isn't visible  */
 static const unsigned int borderpx         = 4;  /* border pixel of windows */
-static const float rootcolor[]             = COLOR(0x222222ff);
+static const float rootcolor[]             = COLOR(0x000000); /*Default 0x222222ff*/
 static const float bordercolor[]           = COLOR(0x102b4eff); /*0x444444ff 0x595959aa*/
 static const float focuscolor[]            = COLOR(0x33dea5ff); /*0x005577ff*/
 static const float urgentcolor[]           = COLOR(0xff0000ff);
