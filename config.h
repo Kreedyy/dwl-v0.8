@@ -138,23 +138,49 @@ static const char *menucmd[] = { "tofi-drun", NULL };
 static const char *filemgrcmd[] = { TERMINAL, "yazi", NULL };
 static const char *discordcmd[] = { "flatpak", "run", "dev.vencord.Vesktop", NULL };
 static const char *browsercmd[] = { "librewolf", NULL };
+
 static const Arg ssregioncmd = SHCMD("slurp | grim -g - - | wl-copy");
 static const Arg ssfullscreencmd = SHCMD("grim -o 'DP-1' - | wl-copy");
 
+static const char *audionextcmd[] = { "playerctl", "next", NULL };
+static const char *audioprevcmd[] = { "playerctl", "previous", NULL };
+static const char *audioplaypausecmd[] = { "playerctl", "play-pause", NULL };
+static const char *audiovolupcmd[] = { "playerctl", "volume", "0.05+", NULL };
+static const char *audiovoldowncmd[] = { "playerctl", "volume", "0.05-", NULL };
+static const char *audiovolmutecmd[] = { "playerctl", "volume", "0", NULL };
+
+static const char *brightnessupcmd[] = { "brightnessctl", "-e4", "-n2", "set", "5%+", NULL };
+static const char *brightnessdowncmd[] = { "brightnessctl", "-e4", "-n2", "set", "5%-", NULL };
+
+
+// /usr/include/xkbcommon/xkbcommon-keysyms.h for all key names
+
 static const Key keys[] = {
 	/* Note that Shift changes certain key codes: 2 -> at, etc. */
-	/* modifier                  key                  function          argument */
-	{ MODKEY,                    XKB_KEY_r,           spawn,            {.v = menucmd} },
-	{ MODKEY,                    XKB_KEY_q,           spawn,            {.v = termcmd} },
-  { MODKEY,                    XKB_KEY_c,           killclient,       {0} },
-  { MODKEY,                    XKB_KEY_b,           spawn,            {.v = browsercmd} },
-  { MODKEY,                    XKB_KEY_e,           spawn,            {.v = filemgrcmd} },
-  { MODKEY,                    XKB_KEY_d,           spawn,            {.v = discordcmd} },
-  { 0,                         XKB_KEY_Print,       spawn,            ssregioncmd },
-  { MODKEY,                    XKB_KEY_Print,       spawn,            ssfullscreencmd },
+	/* modifier                  key                            function          argument */
+	{ MODKEY,                    XKB_KEY_r,                     spawn,            {.v = menucmd} },
+	{ MODKEY,                    XKB_KEY_q,                     spawn,            {.v = termcmd} },
+  { MODKEY,                    XKB_KEY_c,                     killclient,       {0} },
+  { MODKEY,                    XKB_KEY_b,                     spawn,            {.v = browsercmd} },
+  { MODKEY,                    XKB_KEY_e,                     spawn,            {.v = filemgrcmd} },
+  { MODKEY,                    XKB_KEY_d,                     spawn,            {.v = discordcmd} },
 
-  { MODKEY,                    XKB_KEY_f,           togglefloating,   {0} },
-  { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
+  { 0,                         XKB_KEY_Print,                 spawn,            ssregioncmd },
+  { MODKEY,                    XKB_KEY_Print,                 spawn,            ssfullscreencmd },
+
+  { 0,                         XKB_KEY_XF86AudioNext,         spawn,            {.v = audionextcmd} },
+  { 0,                         XKB_KEY_XF86AudioPrev,         spawn,            {.v = audioprevcmd} },
+  { 0,                         XKB_KEY_XF86AudioPlay,         spawn,            {.v = audioplaypausecmd} },
+  { 0,                         XKB_KEY_XF86AudioStop,         spawn,            {.v = audioplaypausecmd} },
+  { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,            {.v = audiovolupcmd} },
+  { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,            {.v = audiovoldowncmd} },
+  { 0,                         XKB_KEY_XF86AudioMute,         spawn,            {.v = audiovolmutecmd} },
+
+  { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,            {.v = brightnessupcmd} },
+  { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,            {.v = brightnessdowncmd} },
+
+  { MODKEY,                    XKB_KEY_f,                   togglefloating,   {0} },
+  { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,                   togglefullscreen, {0} },
 
   TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                        0),
 	TAGKEYS(          XKB_KEY_2, XKB_KEY_at,                            1),
