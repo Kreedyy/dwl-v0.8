@@ -2403,7 +2403,6 @@ resize(Client *c, struct wlr_box geo, int interact)
 void
 run(char *startup_cmd)
 {
-  setenv("XDG_CURRENT_DESKTOP", "wlroots", 1);
   setenv("TERMCMD", "paw", 1);
 
 	/* Add a Unix socket to the Wayland display. */
