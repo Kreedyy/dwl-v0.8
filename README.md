@@ -2,9 +2,7 @@
 
 make clean all
 
-cp dwl /usr/bin/
-
-cp dwl.desktop /usr/share/wayland-sessions/
+doas make PREFIX=/usr install
 
 # dwl - dwm for Wayland
 
