@@ -296,6 +296,7 @@ static void destroykeyboardgroup(struct wl_listener *listener, void *data);
 static Monitor *dirtomon(enum wlr_direction dir);
 static void focusclient(Client *c, int lift);
 static void focusmon(const Arg *arg);
+static int focusunderpointer(void);
 static void focusstack(const Arg *arg);
 static Client *focustop(Monitor *m);
 static void fullscreennotify(struct wl_listener *listener, void *data);
@@ -1563,6 +1564,32 @@ focusclient(Client *c, int lift)
 
 	/* Activate the new client */
 	client_activate_surface(client_surface(c), 1);
+}
+
+/* With sloppy focus, focus whichever managed client currently sits under the
+ * pointer. We test against each client's layout geometry (c->geom) rather than
+ * the scene buffers: after a window closes, resize() updates geom synchronously
+ * but the grown neighbour's buffer only catches up on its next commit, so a
+ * scene hit-test (xytonode) would miss it until the pointer moves. Returns 1 if
+ * a client was focused, 0 otherwise (e.g. the pointer is over a gap). */
+int
+focusunderpointer(void)
+{
+	Client *c;
+
+	if (!sloppyfocus)
+		return 0;
+
+	wl_list_for_each(c, &fstack, flink) {
+		if (!VISIBLEON(c, c->mon) || client_is_unmanaged(c))
+			continue;
+		if (cursor->x >= c->geom.x && cursor->x < c->geom.x + c->geom.width &&
+				cursor->y >= c->geom.y && cursor->y < c->geom.y + c->geom.height) {
+			focusclient(c, 0);
+			return 1;
+		}
+	}
+	return 0;
 }
 
 void
@@ -3009,6 +3036,13 @@ unmapnotify(struct wl_listener *listener, void *data)
 
 	wlr_scene_node_destroy(&c->scene->node);
 	printstatus();
+
+	/* With sloppy focus, prefer the client now under the cursor over the top
+	 * of the focus stack that setmon()/focusclient() may have just selected.
+	 * This keeps focus from jumping to a window the pointer isn't over when
+	 * closing windows. */
+	focusunderpointer();
+
 	motionnotify(0, NULL, 0, 0, 0, 0);
 }
 
