@@ -250,7 +250,6 @@ static const Button buttons[] = {
 
 /* Autostart mabi not needed cuz of monitorconfig patch*/
 static const char *const autostart[] = {
-  "/usr/lib/xdg-desktop-portal", "-r", "&", NULL,
   "/usr/lib/xdg-desktop-portal-termfilechooser", "-r", "&", NULL,
   NULL /*terminate*/
 };
