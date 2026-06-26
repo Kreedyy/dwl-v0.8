@@ -136,7 +136,7 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 static const char *termcmd[] = { TERMINAL, NULL };
 static const char *menucmd[] = { "tofi-drun", NULL };
 static const char *filemgrcmd[] = { TERMINAL, "yazi", NULL };
-static const char *discordcmd[] = { "flatpak", "run", "dev.vencord.Vesktop", NULL };
+static const char *discordcmd[] = { "vesktop", NULL };
 static const char *browsercmd[] = { "librewolf", NULL };
 
 static const Arg ssregioncmd = SHCMD("slurp | grim -g - - | wl-copy");
