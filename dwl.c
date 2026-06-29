@@ -3184,8 +3184,15 @@ view(const Arg *arg)
 	selmon->seltags ^= 1; /* toggle sel tagset */
 	if (arg->ui & TAGMASK)
 		selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
-	focusclient(focustop(selmon), 1);
 	arrange(selmon);
+	/* With sloppy focus, prefer the client now under the cursor over the top of
+	 * the focus stack. The pointer hasn't moved across the tag switch, so the
+	 * client it sits over on the newly shown tag should get focus rather than
+	 * whatever was last focused there. arrange() runs first so c->geom reflects
+	 * the new tag's layout before focusunderpointer() hit-tests against it. */
+	if (!focusunderpointer())
+		focusclient(focustop(selmon), 1);
+	motionnotify(0, NULL, 0, 0, 0, 0);
 	printstatus();
 }
 
