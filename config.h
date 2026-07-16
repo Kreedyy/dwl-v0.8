@@ -15,7 +15,7 @@ static const float urgentcolor[]           = COLOR(0xff0000ff);
 static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f}; /* You can also use glsl colors */
 
 static const float resize_factor           = 1.0f; /* Mouse-resize sensitivity. 1.0 = border tracks the cursor 1:1; lower is slower. Resolution-independent compared to vanilla btrtile. */
-static const uint32_t resize_interval_ms   = 7; /*16 Resize interval depends on framerate and screen refresh rate. */
+static const uint32_t resize_interval_ms   = 16; 
 
 
 /* tagging - TAGCOUNT must be no greater than 31 */
