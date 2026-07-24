@@ -1,7 +1,5 @@
 # Build and install (so ly can find and start dwl)
 
-make clean all
-
 doas make PREFIX=/usr install
 
 # dwl - dwm for Wayland

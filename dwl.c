@@ -2471,8 +2471,6 @@ resize(Client *c, struct wlr_box geo, int interact)
 void
 run(char *startup_cmd)
 {
-  setenv("TERMCMD", "paw", 1);
-
 	/* Add a Unix socket to the Wayland display. */
 	const char *socket = wl_display_add_socket_auto(dpy);
 	if (!socket)
